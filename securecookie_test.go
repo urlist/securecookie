@@ -16,17 +16,19 @@ var (
 )
 
 func TestCreateSignature(t *testing.T) {
+    errStr := "Function return different result with the same parameters!"
+
     a := createSignature(secret, []byte("foo"), []byte("bar"))
     b := a
 
     if !hmac.Equal(a, b) {
-        t.Errorf("Function return different result with the same parameters!")
+        t.Errorf(errStr)
     }
 
     c := createSignature(secret, []byte("foo"), []byte("baz"))
 
     if hmac.Equal(a, c) {
-        t.Errorf("Function return same result with differents parameters!")
+        t.Errorf(errStr)
     }
 }
 
@@ -69,7 +71,7 @@ func TestDecodeSignedValue(t *testing.T) {
         decodedVal := decode(x.name, signedVal)
 
         if decodedVal != x.value {
-            t.Errorf("Got %v (len %v) --- Expected %v (len %v)", 
+            t.Errorf("Got %v (len %v) --- Expected %v (len %v)",
                      decodedVal, len(decodedVal), x.value, len(x.value))
         }
     }
@@ -124,7 +126,8 @@ func TestSignCookie(t *testing.T) {
     }
 }
 
-func TestTamperingFutureTimestamp(t *testing.T) {
+func TestCookieTampering(t *testing.T) {
+    // this string base64-encodes to '12345678'
     initialValue := "d76df8e7aefc"
     clearValue := "12345678"
 
@@ -149,18 +152,42 @@ func TestTamperingFutureTimestamp(t *testing.T) {
 
     timestamp, sig := parts[1], parts[2]
 
-    makeSigFromString := func(value string) string {
-        _sig := string(createSignature(
-            secret,
-            []byte("foo"),
-            []byte(value),
-            []byte(timestamp),
-        ))
+    tests := []func() string{
+        func() string {
+            _sig := createSignature(
+                secret,
+                []byte("foo"),
+                []byte(clearValue),
+                []byte(timestamp),
+            )
 
-        return _sig
+            return string(_sig)
+        },
+
+        // shifting digits from payload to timestamp doesn't alter signature
+        // (this is not desirable behavior, just confirming that that's how it
+        // works)
+        func() string {
+            _sig := createSignature(
+                secret,
+                []byte("foo"),
+                []byte("1234"),
+                []byte(strings.Join([]string{"5678", timestamp}, "")),
+            )
+
+            return string(_sig)
+        },
     }
 
-    if _sig := makeSigFromString(clearValue); _sig != sig {
-        t.Errorf("Invalid signature, Expected %v (len %v) --- Got %v (len %v)", sig, len(sig), _sig, len(_sig))
+    for _, f := range tests {
+        if _sig := f(); _sig != sig {
+            t.Errorf("Invalid signature, Expected %v (len %v) --- Got %v (len %v)", sig, len(sig), _sig, len(_sig))
+        }
+    }
+
+    tamperedValue := fmt.Sprintf("1234|5678%v|%v", timestamp, sig)
+
+    if _, err := DecodeSignedValue(secret, "foo", tamperedValue); err == nil {
+        t.Errorf("Tampered cookie should be rejected!")
     }
 }
