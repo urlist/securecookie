@@ -21,6 +21,10 @@ import (
     "net/http"
 )
 
+type withCookie interface {
+    Cookies() []*http.Cookie
+}
+
 func cookieIsExpired (cookieTime time.Time) bool {
     return cookieTime.Before(time.Now().AddDate(0, 0, -31))
 }
@@ -153,7 +157,7 @@ func SetSecureCookie(w http.ResponseWriter, secret string, c *http.Cookie) {
 // GetSecureCookie returns the named cookie provided in the response or ErrNoCookie if not found,
 // or error if secure cookie value cannot be decoded.
 // Secret should be a long, random sequence of bytes
-func GetSecureCookie(r *http.Response, secret, name string) (*http.Cookie, error) {
+func GetSecureCookie(r withCookie, secret, name string) (*http.Cookie, error) {
     var c *http.Cookie
 
     for _, x := range r.Cookies() {
